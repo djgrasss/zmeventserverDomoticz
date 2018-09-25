@@ -10,10 +10,15 @@ Currently, only activation a virtual device is supported by an alert in Zonemind
 zmeventserverDomoticz will send a MQTT message with topic "domoticz/in".
 
 ## How to configure?
-create a virtual device in domoticz and remember the Idx number. Name your monitor in Zoneminder according to the following scheme:
-`-Idx- Monitorname` example: `-12- Camera Garage`
+Create a virtual device in Domoticz named `Camera Motion Dummy` and remember the Idx number.
+Add the Idx number in the last section of `zmeventnotification.ini` file.
+Create a new dzVents Device script in Domoticz named `CameraMotion` and copy and paste the [raw](https://raw.githubusercontent.com/jannnfe/zmeventserverDomoticz/master/cameramotion.lua) script from this repository.
+See the Notes in the Script and edit the script if necessary!
 
 ## How do I install it?
 Follow the instructions on the original source [here](https://github.com/pliablepixels/zmeventserver#06-how-do-i-install-it) and use this files instead:
-* [Download `zmeventnotification.pl`](https://raw.githubusercontent.com/jannnfe/zmeventserverDomoticz/master/zmeventnotification.ini)
+* [Download `zmeventnotification.pl`](https://raw.githubusercontent.com/jannnfe/zmeventserverDomoticz/master/zmeventnotification.pl)
 * [Download `zmeventnotification.ini`](https://raw.githubusercontent.com/jannnfe/zmeventserverDomoticz/master/zmeventnotification.ini)
+
+## To-Do
+Add support for disable events after alarm is over.

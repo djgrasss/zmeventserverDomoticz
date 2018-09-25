@@ -83,6 +83,8 @@ use constant DEFAULT_CUSTOMIZE_READ_ALARM_CAUSE => 0;
 use constant DEFAULT_CUSTOMIZE_TAG_ALARM_EVENT_ID => 0;
 use constant DEFAULT_CUSTOMIZE_USE_CUSTOM_NOTIFICATION_SOUND => 0;
 
+use constant DEFAULT_DOMOTICZ_DUMMY => 0;
+
 
 # Declare options.
 
@@ -115,6 +117,8 @@ my $monitor_reload_interval;
 my $read_alarm_cause;
 my $tag_alarm_event_id;
 my $use_custom_notification_sound;
+
+my $domoticz_dummy;
 
 #default key. Please don't change this
 use constant NINJA_API_KEY => "AAAApYcZ0mA:APA91bG71SfBuYIaWHJorjmBQB3cAN7OMT7bAxKuV3ByJ4JiIGumG6cQw0Bo6_fHGaWoo4Bl-SlCdxbivTv5Z-2XPf0m86wsebNIG15pyUHojzmRvJKySNwfAHs7sprTGsA_SIR_H43h";
@@ -179,6 +183,8 @@ Usage: zmeventnotification.pl [OPTION]...
   --use-custom-notification-sound     Use custom notification sound (default: true).
   --no-use-custom-notification-sound  Don't use custom notification sound (default: false).
 
+  --domoticz_dummy=IDX                 Set Domoticz Idx for Dummy Motion Sensor (default: 0).
+
 USAGE
 
 GetOptions(
@@ -208,7 +214,9 @@ GetOptions(
   "monitor-reload-interval=i"      => \$monitor_reload_interval,
   "read-alarm-cause!"              => \$read_alarm_cause,
   "tag-alarm-event-id!"            => \$tag_alarm_event_id,
-  "use-custom-notification-sound!" => \$use_custom_notification_sound
+  "use-custom-notification-sound!" => \$use_custom_notification_sound,
+
+  "domoticz_dummy=i"               => \$domoticz_dummy
 );
 
 exit(print(USAGE)) if $help;
@@ -272,6 +280,8 @@ $monitor_reload_interval       //= config_get_val($config, "customize", "monitor
 $read_alarm_cause              //= config_get_val($config, "customize", "read_alarm_cause",              DEFAULT_CUSTOMIZE_READ_ALARM_CAUSE);
 $tag_alarm_event_id            //= config_get_val($config, "customize", "tag_alarm_event_id",            DEFAULT_CUSTOMIZE_TAG_ALARM_EVENT_ID);
 $use_custom_notification_sound //= config_get_val($config, "customize", "use_custom_notification_sound", DEFAULT_CUSTOMIZE_USE_CUSTOM_NOTIFICATION_SOUND);
+
+$domoticz_dummy //= config_get_val($config, "domoticz", "domoticz_dummy", DEFAULT_DOMOTICZ_DUMMY);
 
 my %ssl_push_opts = ();
 
@@ -341,6 +351,8 @@ Verbose ....................... ${\(true_or_false($verbose))}
 Read alarm cause .............. ${\(true_or_false($read_alarm_cause))}
 Tag alarm event id ............ ${\(true_or_false($tag_alarm_event_id))}
 Use custom notification sound . ${\(true_or_false($use_custom_notification_sound))}
+
+Idx ........................... ${\(value_or_undefined($domoticz_dummy))}
 
 EOF
   )
@@ -536,14 +548,13 @@ sub checkEvents()
                 $alarm_mid = $alarm_mid.$mid.",";
                 $alarm_header = $alarm_header . " (".$last_event.") " if ($tag_alarm_event_id);
                 $alarm_header = $alarm_header . "," ;
-		$alarm_name = $name;
+		        $alarm_name = $name ;
                 $eventFound = 1;
             }
             
         }
     }
     chop($alarm_header) if ($alarm_header);
-    chop($alarm_name) if ($alarm_name);
     chop ($alarm_mid) if ($alarm_mid);
 
     # Send out dummy events for testing
@@ -679,26 +690,31 @@ sub sendOverMQTTBroker
 
     my ($header, $monitor_name,  $mid) = @_;
     my $json;
-    my $idx = $monitor_name =~ /\-([^-]+)\-/g;
 
-#    $json = encode_json ({
-#                monitor => $mid,
-#                name => $header,
-#                state => 'alarm'
-#            });
-
-    $json = encode_json ({
-                idx => 79,
+    if ($domoticz_dummy == 0)
+    {
+        $json = encode_json ({
+                monitor => $mid,
+                name => $header,
+                state => 'true'
+            });
+        my $mqtt = Net::MQTT::Simple->new($mqtt_server);
+        Debug ("JSON being sent is: $json");
+        $mqtt->publish(join('/','zoneminder',$mid) => $json);
+    }
+    else
+    {
+        $json = encode_json ({
+                idx => $domoticz_dummy,
                 nvalue => 1,
                 svalue => $monitor_name,
                 Battery => 57,
                 RSSI => 6
             });
-
-    my $mqtt = Net::MQTT::Simple->new($mqtt_server);
-    Debug ("JSON being sent is: $json");
-#    $mqtt->publish(join('/','zoneminder',$mid) => $json);
-    $mqtt->publish(join('/','domoticz','in') => $json);
+        my $mqtt = Net::MQTT::Simple->new($mqtt_server);
+        Debug ("Domoticz being sent is: $json");
+        $mqtt->publish(join('/','domoticz','in') => $json);
+    }
 }
 
 
