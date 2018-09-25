@@ -406,6 +406,7 @@ my $wss;
 my @events=();
 my @active_connections=();
 my $alarm_header="";
+my $alarm_name="";
 my $alarm_mid="";
 my $alarm_eid="";
 
@@ -494,6 +495,7 @@ sub checkEvents()
     }
     @events = ();
     $alarm_header = "";
+    $alarm_name = "";
     $alarm_mid="";
     $alarm_eid = ""; # only take 1 if several occur
     foreach my $monitor ( values(%monitors) )
@@ -534,12 +536,14 @@ sub checkEvents()
                 $alarm_mid = $alarm_mid.$mid.",";
                 $alarm_header = $alarm_header . " (".$last_event.") " if ($tag_alarm_event_id);
                 $alarm_header = $alarm_header . "," ;
+		$alarm_name = $name;
                 $eventFound = 1;
             }
             
         }
     }
     chop($alarm_header) if ($alarm_header);
+    chop($alarm_name) if ($alarm_name);
     chop ($alarm_mid) if ($alarm_mid);
 
     # Send out dummy events for testing
@@ -673,20 +677,28 @@ sub deleteToken
 sub sendOverMQTTBroker
 {
 
-    my ($header, $mid) = @_;
+    my ($header, $monitor_name,  $mid) = @_;
     my $json;
+    my $idx = $monitor_name =~ /\-([^-]+)\-/g;
+
+#    $json = encode_json ({
+#                monitor => $mid,
+#                name => $header,
+#                state => 'alarm'
+#            });
 
     $json = encode_json ({
-                monitor=> $mid,
-                name=>$header,
-                state => 'alarm',
+                idx => 79,
+                nvalue => 1,
+                svalue => $monitor_name,
+                Battery => 57,
+                RSSI => 6
             });
 
-    Debug ("Final JSON being sent is: $json");
-
     my $mqtt = Net::MQTT::Simple->new($mqtt_server);
-
-    $mqtt->publish(join('/','zoneminder',$mid) => $json);
+    Debug ("JSON being sent is: $json");
+#    $mqtt->publish(join('/','zoneminder',$mid) => $json);
+    $mqtt->publish(join('/','domoticz','in') => $json);
 }
 
 
@@ -1451,7 +1463,7 @@ sub initSocketServer
                 if ($use_mqtt) 
                 {
                     Info ("Sending notification over MQTT");
-                    sendOverMQTTBroker($alarm_header, $alarm_mid);
+                    sendOverMQTTBroker($alarm_header, $alarm_name,  $alarm_mid);
                 }
 
                 Info ("Broadcasting new events to all $ac websocket clients\n");
