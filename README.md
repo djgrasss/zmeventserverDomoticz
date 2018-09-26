@@ -6,7 +6,7 @@ A WSS (Secure Web Sockets) and/or MQTT  based event notification server that bro
 
 ## What is diffrent?
 With this fork, you can activate a virtual device in Domoticz by an alarm in Zoneminder, such as a motion detector.
-Currently, only activation a virtual device is supported by an alert in Zoneminder. This has the consequence that the motion detector always remains "ON" in Domoticz. Add a "Off Delay" in Domoticz device settings is a possible workaround.
+Currently, only activation a virtual device is supported by an alert in Zoneminder. This has the consequence that the motion detector always remains "ON" in Domoticz. Add a "Off Delay" in Domoticz device settings is a possible workaround. The Lua script will handle this for you and turns the Motion Sensor on for 30 sec.
 zmeventserverDomoticz will send a MQTT message with topic "domoticz/in".
 
 ## How to configure?

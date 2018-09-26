@@ -19,7 +19,7 @@ return {
     on = {
         devices = {
             -- Change Camera Motion Dummy name if necessary:
-            'Kamera Motion Dummy'
+            'Camera Motion Dummy'
         }
     },
     logging = {
