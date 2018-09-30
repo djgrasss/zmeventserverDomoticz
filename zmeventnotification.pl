@@ -51,7 +51,7 @@ use bytes;
 # ==========================================================================
 
 
-my $app_version="1.1";
+my $app_version="1.4";
 
 # ==========================================================================
 #
@@ -102,6 +102,8 @@ my $auth_timeout;
 
 my $use_mqtt;
 my $mqtt_server; 
+my $mqtt_username;
+my $mqtt_password;
 
 my $use_fcm;
 my $fcm_api_key;
@@ -163,6 +165,9 @@ Usage: zmeventnotification.pl [OPTION]...
   --enable-fcm                        Use FCM for messaging (default: true).
   --no-enable-fcm                     Don't use FCM for messaging (default: false).
   --enable-mqtt                       Use MQTT for messaging (default: false).
+  --mqtt-server=SERVER                MQTT messaging server (default: 127.0.0.1). 
+  --mqtt-username=USERNAME            MQTT username (default: unset)
+  --mqtt-password=PASSWORD            MQTT password (default: unset)   
   --no-enable-mqtt                    Disable MQTT for messaging (default: true).
   --fcm-api-key=KEY                   API key for FCM (default: zmNinja FCM key).
   --token-file=FILE                   Auth token store location (default: /etc/private/tokens.txt).
@@ -200,6 +205,8 @@ GetOptions(
   
   "enable-mqtt!"                    => \$use_mqtt,
   "mqtt-server=s"                  => \$mqtt_server,
+  "mqtt-username=s"                  => \$mqtt_username,
+  "mqtt-password=s"                  => \$mqtt_password,
 
   "enable-fcm!"                    => \$use_fcm,
   "fcm-api-key=s"                  => \$fcm_api_key,
@@ -265,6 +272,8 @@ $auth_timeout //= config_get_val($config, "auth", "timeout", DEFAULT_AUTH_TIMEOU
 
 $use_mqtt    //= config_get_val($config, "mqtt", "enable",     DEFAULT_MQTT_ENABLE);
 $mqtt_server  //= config_get_val($config, "mqtt", "server",    DEFAULT_MQTT_SERVER);
+$mqtt_username //= config_get_val($config, "mqtt", "username");
+$mqtt_password //= config_get_val($config, "mqtt", "password");
 
 $use_fcm     //= config_get_val($config, "fcm", "enable",     DEFAULT_FCM_ENABLE);
 $fcm_api_key //= config_get_val($config, "fcm", "api_key", NINJA_API_KEY);
@@ -313,6 +322,7 @@ sub value_or_undefined {
   return $_[0] || "(undefined)";
 }
 
+
 sub present_or_not {
   return $_[0] ? "(defined)" : "(undefined)";
 }
@@ -342,6 +352,8 @@ Token file .................... ${\(value_or_undefined($token_file))}
 
 Use MQTT .......................${\(true_or_false($use_mqtt))}
 MQTT Server ....................${\(value_or_undefined($mqtt_server))}
+MQTT Username ..................${\(value_or_undefined($mqtt_username))}
+MQTT Password ..................${\(present_or_not($mqtt_password))}
 
 SSL enabled ................... ${\(true_or_false($ssl_enabled))}
 SSL cert file ................. ${\(value_or_undefined($ssl_cert_file))}
@@ -421,6 +433,7 @@ my $alarm_header="";
 my $alarm_name="";
 my $alarm_mid="";
 my $alarm_eid="";
+my $needsReload = 0;
 
 # MAIN
 
@@ -443,6 +456,10 @@ if ($use_fcm)
 if ($use_mqtt)
 {
     if (!try_use ("Net::MQTT::Simple")) {Fatal ("Net::MQTT::Simple  missing");exit (-1);}
+    if (defined $mqtt_username)
+    {
+        if (!try_use ("Net::MQTT::Simple::Auth")) {Fatal ("Net::MQTT::Simple::Auth  missing");exit (-1);}
+    }
     Info ("Broadcasting Events to MQTT");
 
 }
@@ -481,7 +498,7 @@ sub checkEvents()
 {
     
     my $eventFound = 0;
-    if ( (time() - $monitor_reload_time) > $monitor_reload_interval )
+    if ( $needsReload || ((time() - $monitor_reload_time) > $monitor_reload_interval ))
     {
         my $len = scalar @active_connections;
         Info ("Total event client connections: ".$len."\n");
@@ -504,6 +521,7 @@ sub checkEvents()
             zmMemInvalidate( $monitor );
         }
         loadMonitors();
+        $needsReload = 0;
     }
     @events = ();
     $alarm_header = "";
@@ -513,7 +531,14 @@ sub checkEvents()
     foreach my $monitor ( values(%monitors) )
     { 
          my $alarm_cause="";
-        
+
+         if (  !zmMemVerify($monitor) ) {
+          # Our attempt to verify the memory handle failed. We should reload the monitors.
+          # Don't need to zmMemInvalidate because the monitor reload will do it.
+          $needsReload = 1;
+          Error ("** Memory verify failed for ".$monitor->{Name}."(id:".$monitor->{Id}. ") so forcing reload");
+          next;
+          }
          my ( $state, $last_event, $trigger_cause, $trigger_text)
             = zmMemRead( $monitor,
                  [ "shared_data:state",
@@ -576,46 +601,27 @@ sub checkEvents()
 # 
 sub loadMonitors
 {
-    Info( "Loading monitors\n" );
-    $monitor_reload_time = time();
+      Info( "Loading monitors\n" );
+      $monitor_reload_time = time();
 
-    my %new_monitors = ();
+      my %new_monitors = ();
 
-    my $sql = "SELECT * FROM Monitors
-               WHERE find_in_set( Function, 'Modect,Mocord,Nodect' )".
-               ( $Config{ZM_SERVER_ID} ? 'AND ServerId=?' : '' );
-    Debug ("SQL to be executed is :$sql");
-     my $sth = $dbh->prepare_cached( $sql )
+      my $sql = "SELECT * FROM Monitors
+        WHERE find_in_set( Function, 'Modect,Mocord,Nodect' )".
+        ( $Config{ZM_SERVER_ID} ? 'AND ServerId=?' : '' )
+        ;
+      my $sth = $dbh->prepare_cached( $sql )
         or Fatal( "Can't prepare '$sql': ".$dbh->errstr() );
-    my $res = $sth->execute( $Config{ZM_SERVER_ID} ? $Config{ZM_SERVER_ID} : () )
+      my $res = $sth->execute( $Config{ZM_SERVER_ID} ? $Config{ZM_SERVER_ID} : () )
         or Fatal( "Can't execute: ".$sth->errstr() );
-    while( my $monitor = $sth->fetchrow_hashref() )
-    {
-        if ( !zmMemVerify( $monitor ) ) {
-              zmMemInvalidate( $monitor );
-              next;
-        }
-       # next if ( !zmMemVerify( $monitor ) ); # Check shared memory ok
-
-        if ( defined($monitors{$monitor->{Id}}->{LastState}) )
-        {
-            $monitor->{LastState} = $monitors{$monitor->{Id}}->{LastState};
-        }
-        else
-        {
+      while( my $monitor = $sth->fetchrow_hashref() ) {
+        if ( zmMemVerify( $monitor ) ) {
             $monitor->{LastState} = zmGetMonitorState( $monitor );
-        }
-        if ( defined($monitors{$monitor->{Id}}->{LastEvent}) )
-        {
-            $monitor->{LastEvent} = $monitors{$monitor->{Id}}->{LastEvent};
-        }
-        else
-        {
             $monitor->{LastEvent} = zmGetLastEvent( $monitor );
         }
         $new_monitors{$monitor->{Id}} = $monitor;
-    }
-    %monitors = %new_monitors;
+      } # end while fetchrow
+      %monitors = %new_monitors;
 }
 
 
@@ -690,6 +696,7 @@ sub sendOverMQTTBroker
 
     my ($header, $monitor_name,  $mid) = @_;
     my $json;
+    my $mqtt;
 
     if ($domoticz_dummy == 0)
     {
@@ -698,6 +705,7 @@ sub sendOverMQTTBroker
                 name => $header,
                 state => 'true'
             });
+<<<<<<< HEAD
         my $mqtt = Net::MQTT::Simple->new($mqtt_server);
         Debug ("JSON being sent is: $json");
         $mqtt->publish(join('/','zoneminder',$mid) => $json);
@@ -715,6 +723,21 @@ sub sendOverMQTTBroker
         Debug ("Domoticz being sent is: $json");
         $mqtt->publish(join('/','domoticz','in') => $json);
     }
+=======
+
+    Debug ("Final JSON being sent is: $json");
+
+    if (defined $mqtt_username && defined $mqtt_password)
+    {
+        $mqtt = Net::MQTT::Simple::Auth->new($mqtt_server, $mqtt_username, $mqtt_password);
+    }
+    else 
+    {
+        $mqtt = Net::MQTT::Simple->new($mqtt_server);
+    }
+
+    $mqtt->publish(join('/','zoneminder',$mid) => $json);
+>>>>>>> upstream/master
 }
 
 
