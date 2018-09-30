@@ -705,9 +705,14 @@ sub sendOverMQTTBroker
                 name => $header,
                 state => 'true'
             });
-<<<<<<< HEAD
-        my $mqtt = Net::MQTT::Simple->new($mqtt_server);
+
         Debug ("JSON being sent is: $json");
+        if (defined $mqtt_username && defined $mqtt_password){
+            $mqtt = Net::MQTT::Simple::Auth->new($mqtt_server, $mqtt_username, $mqtt_password);
+        }
+        else{
+            $mqtt = Net::MQTT::Simple->new($mqtt_server);
+        }
         $mqtt->publish(join('/','zoneminder',$mid) => $json);
     }
     else
@@ -719,25 +724,16 @@ sub sendOverMQTTBroker
                 Battery => 57,
                 RSSI => 6
             });
-        my $mqtt = Net::MQTT::Simple->new($mqtt_server);
+
         Debug ("Domoticz being sent is: $json");
+        if (defined $mqtt_username && defined $mqtt_password){
+            $mqtt = Net::MQTT::Simple::Auth->new($mqtt_server, $mqtt_username, $mqtt_password);
+        }
+        else{
+            $mqtt = Net::MQTT::Simple->new($mqtt_server);
+        }
         $mqtt->publish(join('/','domoticz','in') => $json);
     }
-=======
-
-    Debug ("Final JSON being sent is: $json");
-
-    if (defined $mqtt_username && defined $mqtt_password)
-    {
-        $mqtt = Net::MQTT::Simple::Auth->new($mqtt_server, $mqtt_username, $mqtt_password);
-    }
-    else 
-    {
-        $mqtt = Net::MQTT::Simple->new($mqtt_server);
-    }
-
-    $mqtt->publish(join('/','zoneminder',$mid) => $json);
->>>>>>> upstream/master
 }
 
 
